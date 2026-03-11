@@ -14,7 +14,7 @@ from app.database import get_schema_ddl
 
 _client: genai.Client | None = None
 
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
 def _get_client() -> genai.Client:

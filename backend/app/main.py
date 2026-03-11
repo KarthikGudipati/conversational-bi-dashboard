@@ -14,7 +14,13 @@ from app.sql_executor import execute_query
 from app.chart_selector import recommend_chart
 from app.csv_loader import load_csv_to_sqlite
 
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 # ── Pydantic schemas ────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
