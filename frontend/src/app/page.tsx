@@ -3,12 +3,13 @@
 import React, { useState } from "react";
 import PromptBox from "@/components/PromptBox";
 import DashboardGrid from "@/components/DashboardGrid";
-import { submitQuery, uploadCsv } from "@/lib/api";
+import { submitQuery, uploadCsv, clearSession } from "@/lib/api";
 import type { QueryResult } from "@/lib/api";
 
 export default function Home() {
   const [results, setResults] = useState<QueryResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
@@ -20,7 +21,11 @@ export default function Home() {
   const handleQuery = async (prompt: string) => {
     setIsLoading(true);
     try {
-      const result = await submitQuery(prompt);
+      const result = await submitQuery(prompt, sessionId);
+      // Store the session ID from the first response
+      if (!sessionId) {
+        setSessionId(result.session_id);
+      }
       // Newest result at the top of the dashboard
       setResults((prev) => [result, ...prev]);
     } catch (err: unknown) {
@@ -45,6 +50,15 @@ export default function Home() {
     }
   };
 
+  // ── Start a new conversation ──────────────────────────────────────
+  const handleNewChat = async () => {
+    if (sessionId) {
+      await clearSession(sessionId);
+    }
+    setSessionId(null);
+    setResults([]);
+  };
+
   return (
     <div className="app-shell">
       {/* ── Header ─────────────────────────────────────────────────── */}
@@ -62,7 +76,9 @@ export default function Home() {
       <PromptBox
         onSubmit={handleQuery}
         onFileUpload={handleUpload}
+        onNewChat={handleNewChat}
         isLoading={isLoading}
+        hasSession={sessionId !== null && results.length > 0}
       />
 
       {/* ── Dashboard grid ─────────────────────────────────────────── */}

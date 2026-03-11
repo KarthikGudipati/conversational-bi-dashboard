@@ -5,13 +5,17 @@ import React, { useState, useRef } from "react";
 interface PromptBoxProps {
   onSubmit: (prompt: string) => void;
   onFileUpload: (file: File) => void;
+  onNewChat: () => void;
   isLoading: boolean;
+  hasSession: boolean;
 }
 
 export default function PromptBox({
   onSubmit,
   onFileUpload,
+  onNewChat,
   isLoading,
+  hasSession,
 }: PromptBoxProps) {
   const [prompt, setPrompt] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -60,10 +64,30 @@ export default function PromptBox({
           type="text"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Ask a question about your data…"
+          placeholder={
+            hasSession
+              ? "Ask a follow-up question…"
+              : "Ask a question about your data…"
+          }
           className="prompt-box__input"
           disabled={isLoading}
         />
+
+        {/* New Chat button — only visible when a conversation is active */}
+        {hasSession && (
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="prompt-box__new-chat-btn"
+            title="Start a new conversation"
+            disabled={isLoading}
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Chat
+          </button>
+        )}
 
         {/* Submit button */}
         <button

@@ -19,6 +19,7 @@ export interface QueryResult {
   data: Record<string, unknown>[];
   chart_config: ChartConfig;
   summary: string;
+  session_id: string;
 }
 
 export interface UploadResult {
@@ -30,11 +31,19 @@ export interface UploadResult {
 
 // ── API calls ───────────────────────────────────────────────────────
 
-export async function submitQuery(prompt: string): Promise<QueryResult> {
+export async function submitQuery(
+  prompt: string,
+  sessionId?: string | null,
+): Promise<QueryResult> {
+  const body: Record<string, string> = { prompt };
+  if (sessionId) {
+    body.session_id = sessionId;
+  }
+
   const res = await fetch(`${API_BASE}/query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -56,4 +65,12 @@ export async function uploadCsv(file: File): Promise<UploadResult> {
     throw new Error(err.detail || "Upload failed");
   }
   return res.json();
+}
+
+export async function clearSession(sessionId: string): Promise<void> {
+  await fetch(`${API_BASE}/session/clear`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
 }

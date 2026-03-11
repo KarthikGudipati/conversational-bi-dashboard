@@ -30,6 +30,26 @@ def _get_client() -> genai.Client:
     return _client
 
 
+# ── Conversation history formatting ─────────────────────────────────
+
+def _format_history(history: list[dict]) -> str:
+    """
+    Convert session history into a text block the LLM can understand.
+    Each turn shows what the user asked and what SQL was generated.
+    """
+    if not history:
+        return ""
+
+    lines = ["### Conversation History"]
+    for turn in history:
+        if turn["role"] == "user":
+            lines.append(f"**User:** {turn['prompt']}")
+        elif turn["role"] == "assistant" and turn.get("sql"):
+            lines.append(f"**Generated SQL:** {turn['sql']}")
+    lines.append("")  # trailing newline
+    return "\n".join(lines)
+
+
 # ── NL → SQL ────────────────────────────────────────────────────────
 
 NL2SQL_SYSTEM = """\
@@ -43,17 +63,28 @@ Rules:
 4. If the question is ambiguous, make a reasonable assumption and proceed.
 5. Always alias calculated columns with descriptive names.
 6. Use standard SQLite functions and date handling.
+7. If the user's question refers to a previous query (e.g. "now filter…",
+   "sort that by…", "also show…"), use the conversation history to
+   understand what they are referring to and refine the previous SQL
+   accordingly.
 """
 
 
-async def generate_sql_from_prompt(prompt: str, schema: dict) -> str:
+async def generate_sql_from_prompt(
+    prompt: str,
+    schema: dict,
+    history: list[dict] | None = None,
+) -> str:
     """Call Gemini to translate *prompt* into a SQL SELECT statement."""
     ddl = get_schema_ddl()
     if not ddl:
         raise ValueError("Database schema is empty — upload a CSV first.")
 
+    history_block = _format_history(history or [])
+
     user_message = (
         f"### Database Schema\n{ddl}\n\n"
+        f"{history_block}"
         f"### User Question\n{prompt}\n\n"
         "Return ONLY the SQL query."
     )
@@ -95,16 +126,25 @@ SUMMARY_SYSTEM = """\
 You are an expert data analyst. Given a user's question and the JSON result
 set from their database query, write a 1–2 sentence plain‑English insight
 that highlights the most notable finding. Be specific with numbers.
+If this is a follow‑up question, incorporate context from the conversation
+history to make the insight more relevant.
 """
 
 
-async def generate_summary(prompt: str, data: list[dict]) -> str:
+async def generate_summary(
+    prompt: str,
+    data: list[dict],
+    history: list[dict] | None = None,
+) -> str:
     """Generate a human‑readable analytical summary of *data*."""
     # Limit data sent to LLM to first 50 rows for token efficiency
     preview = json.dumps(data[:50], default=str)
 
+    history_block = _format_history(history or [])
+
     user_message = (
         f"### User Question\n{prompt}\n\n"
+        f"{history_block}"
         f"### Query Result (JSON)\n{preview}\n\n"
         "Write a concise insight."
     )

@@ -13,6 +13,12 @@ from app.llm_engine import generate_sql_from_prompt, generate_summary
 from app.sql_executor import execute_query
 from app.chart_selector import recommend_chart
 from app.csv_loader import load_csv_to_sqlite
+from app.session_store import (
+    create_session,
+    get_history,
+    add_turn,
+    clear_session,
+)
 
 from dotenv import load_dotenv
 import os
@@ -21,10 +27,12 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
 # ── Pydantic schemas ────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
     prompt: str
+    session_id: Optional[str] = None
 
 class QueryResponse(BaseModel):
     prompt: str
@@ -32,6 +40,7 @@ class QueryResponse(BaseModel):
     data: list[dict]
     chart_config: dict
     summary: str
+    session_id: str
 
 class UploadResponse(BaseModel):
     message: str
@@ -41,6 +50,12 @@ class UploadResponse(BaseModel):
 
 class SchemaResponse(BaseModel):
     tables: dict
+
+class SessionClearRequest(BaseModel):
+    session_id: str
+
+class SessionClearResponse(BaseModel):
+    message: str
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────
@@ -67,8 +82,13 @@ async def query_endpoint(req: QueryRequest):
     """
     Accept a natural‑language prompt, convert it to SQL via Gemini,
     execute the query, pick the best chart type, and return everything.
+    Maintains conversation context via session_id.
     """
     try:
+        # 0. Resolve session
+        session_id = req.session_id or create_session()
+        history = get_history(session_id)
+
         # 1. Retrieve the current database schema
         schema = get_schema_info()
         if not schema:
@@ -77,8 +97,8 @@ async def query_endpoint(req: QueryRequest):
                 detail="No tables found. Please upload a CSV first.",
             )
 
-        # 2. Convert natural language → SQL
-        sql = await generate_sql_from_prompt(req.prompt, schema)
+        # 2. Convert natural language → SQL (with conversation context)
+        sql = await generate_sql_from_prompt(req.prompt, schema, history=history)
 
         # 3. Execute the SQL against SQLite
         data = execute_query(sql)
@@ -86,8 +106,11 @@ async def query_endpoint(req: QueryRequest):
         # 4. Determine the best chart type
         chart_config = recommend_chart(data, sql, req.prompt)
 
-        # 5. Generate a short analytical summary
-        summary = await generate_summary(req.prompt, data)
+        # 5. Generate a short analytical summary (with conversation context)
+        summary = await generate_summary(req.prompt, data, history=history)
+
+        # 6. Record this turn in session history
+        add_turn(session_id, req.prompt, sql)
 
         return QueryResponse(
             prompt=req.prompt,
@@ -95,12 +118,20 @@ async def query_endpoint(req: QueryRequest):
             data=data,
             chart_config=chart_config,
             summary=summary,
+            session_id=session_id,
         )
 
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/session/clear", response_model=SessionClearResponse)
+async def clear_session_endpoint(req: SessionClearRequest):
+    """Clear conversation history for a session."""
+    clear_session(req.session_id)
+    return SessionClearResponse(message="Session cleared successfully")
 
 
 @app.post("/upload_csv", response_model=UploadResponse)
